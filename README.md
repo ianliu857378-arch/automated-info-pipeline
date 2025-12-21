@@ -73,6 +73,22 @@ python src/data_cleaner.py
 python src/image_processor.py
 ```
 
+**Run Web UI:**
+```bash
+streamlit run src/app_ui.py
+```
+
+## 🌐 Live Demo & Deployment
+
+This project is ready for one-click deployment on **Streamlit Community Cloud**.
+
+1.  Push this code to your GitHub repository.
+2.  Go to [share.streamlit.io](https://share.streamlit.io/).
+3.  Connect your GitHub and select the `automated-info-pipeline` repo.
+4.  Set the **Main file path** to `src/app_ui.py`.
+5.  In "Advanced settings", add your `GEMINI_API_KEY` as a Secret.
+6.  Click **Deploy**!
+
 ---
 
 ## 👨‍💻 Author
