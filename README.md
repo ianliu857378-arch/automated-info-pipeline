@@ -86,7 +86,10 @@ This project is ready for one-click deployment on **Streamlit Community Cloud**.
 2.  Go to [share.streamlit.io](https://share.streamlit.io/).
 3.  Connect your GitHub and select the `automated-info-pipeline` repo.
 4.  Set the **Main file path** to `src/app_ui.py`.
-5.  In "Advanced settings", add your `GEMINI_API_KEY` as a Secret.
+5.  In "Advanced settings", add your `GEMINI_API_KEY` as a Secret using TOML format:
+    ```toml
+    GEMINI_API_KEY = "your-api-key-here"
+    ```
 6.  Click **Deploy**!
 
 ---
