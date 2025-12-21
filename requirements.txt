@@ -1,0 +1,7 @@
+# Dependencies
+pandas
+openpyxl
+google-genai
+python-dotenv
+Pillow
+requests
