@@ -82,6 +82,22 @@ class DataCleaner:
             df.rename(columns=column_mapping, inplace=True)
             logs.append("Applied default column mapping (backward compatibility mode).")
 
+        # 3. Post-Mapping Standardization (Critical Fallback)
+        # Ensure common columns are mapped even if missed by UI/User mapping
+        fallback_mapping = {
+            'Salary': 'TotalPrice',
+            'salary': 'TotalPrice',
+            'Wage': 'TotalPrice',
+            '薪资': 'TotalPrice',
+            'Join_Date': 'OrderDate',
+            'join_date': 'OrderDate'
+        }
+        
+        for source, target in fallback_mapping.items():
+            if source in df.columns and target not in df.columns:
+                df.rename(columns={source: target}, inplace=True)
+                logs.append(f"Auto-mapped leftover column '{source}' to '{target}' for cleaning.")
+
         # Helper function to check if field exists
         def has_field(field_name):
             return field_name in df.columns
