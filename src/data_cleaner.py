@@ -76,7 +76,7 @@ class DataCleaner:
                 '城市': 'City',
                 '城市': 'City',
                 '消费金额': 'TotalPrice',
-                'Salary': 'TotalPrice',
+                '消费金额': 'TotalPrice',
                 '薪资': 'TotalPrice'
             }
             df.rename(columns=column_mapping, inplace=True)
@@ -85,11 +85,8 @@ class DataCleaner:
         # 3. Post-Mapping Standardization (Critical Fallback)
         # Ensure common columns are mapped even if missed by UI/User mapping
         fallback_mapping = {
-            'Salary': 'TotalPrice',
-            'salary': 'TotalPrice',
             'Wage': 'TotalPrice',
             '薪资': 'TotalPrice',
-            'Join_Date': 'OrderDate',
             'join_date': 'OrderDate'
         }
         
@@ -101,6 +98,8 @@ class DataCleaner:
         # Helper function to check if field exists
         def has_field(field_name):
             return field_name in df.columns
+            
+        print(f"DEBUG: Current Columns: {df.columns.tolist()}")
 
         # ========== Conditional Field Processing ==========
 
@@ -111,7 +110,8 @@ class DataCleaner:
             'Quantity': '数量',
             'Revenue': '收入',
             'Cost': '成本',
-            'Rating': '评分'
+            'Rating': '评分',
+            'Salary': '薪资'
         }
 
         for field, label in numeric_fields.items():
@@ -146,58 +146,80 @@ class DataCleaner:
                 logs.append(f"Processed 'Age': Converted to numeric format.")
 
         # 5. Clean DateTime Fields
-        if has_field('OrderDate'):
-            original_count = len(df)
-            # Try multiple date formats for better compatibility
-            # First, try common formats explicitly
-            date_formats = [
-                '%Y-%m-%d',      # 2023-01-01
-                '%Y/%m/%d',      # 2023/02/15
-                '%m-%d-%Y',      # 03-20-2023
-                '%d-%m-%Y',      # 20-03-2023
-                '%Y.%m.%d',      # 2024.05.12
-                '%m/%d/%Y',      # 03/20/2023
-                '%d/%m/%Y',      # 20/03/2023
-            ]
+        date_fields = ['OrderDate', 'Join_Date']
+        for date_field in date_fields:
+            if has_field(date_field):
+                original_count = len(df)
+                
+                # Handle relative dates (Yesterday, Today, Tomorrow)
+                # Normalize case for checking
+                df[date_field] = df[date_field].astype(str)
+                
+                def parse_relative_date(val):
+                    val_lower = str(val).lower().strip()
+                    today = datetime.now()
+                    if val_lower == 'yesterday':
+                        return (today - timedelta(days=1)).strftime('%Y-%m-%d')
+                    elif val_lower == 'today':
+                        return today.strftime('%Y-%m-%d')
+                    elif val_lower == 'tomorrow':
+                        return (today + timedelta(days=1)).strftime('%Y-%m-%d')
+                    return val
 
-            # Try pandas auto-parsing first (most flexible)
-            # Use infer_datetime_format for better format inference
-            try:
-                # Try with format='mixed' (pandas 2.0+)
-                df['OrderDate'] = pd.to_datetime(df['OrderDate'], errors='coerce', format='mixed')
-            except TypeError:
-                # Fallback for older pandas versions
-                df['OrderDate'] = pd.to_datetime(df['OrderDate'], errors='coerce', infer_datetime_format=True)
+                # Apply relative date parsing BEFORE standard parsing
+                from datetime import datetime, timedelta
+                df[date_field] = df[date_field].apply(parse_relative_date)
 
-            # If auto-parsing failed for some rows, try explicit formats
-            if df['OrderDate'].isna().any():
-                na_mask = df['OrderDate'].isna()
-                for date_format in date_formats:
-                    if not na_mask.any():
-                        break
-                    try:
-                        # Only try to parse rows that are still NaN
-                        parsed_dates = pd.to_datetime(
-                            df.loc[na_mask, 'OrderDate'],
-                            errors='coerce',
-                            format=date_format
-                        )
-                        # Update only successfully parsed dates
-                        df.loc[na_mask, 'OrderDate'] = parsed_dates
-                        na_mask = df['OrderDate'].isna()
-                    except (ValueError, TypeError):
-                        continue
+                # Try multiple date formats for better compatibility
+                # First, try common formats explicitly
+                date_formats = [
+                    '%Y-%m-%d',      # 2023-01-01
+                    '%Y/%m/%d',      # 2023/02/15
+                    '%m-%d-%Y',      # 03-20-2023
+                    '%d-%m-%Y',      # 20-03-2023
+                    '%Y.%m.%d',      # 2024.05.12
+                    '%m/%d/%Y',      # 03/20/2023
+                    '%d/%m/%Y',      # 20/03/2023
+                ]
 
-            # Only drop rows where date is completely invalid (not just unparseable)
-            # This is more lenient - we keep rows even if date parsing fails
-            # Uncomment the following line if you want strict date validation:
-            # df.dropna(subset=['OrderDate'], inplace=True)
+                # Try pandas auto-parsing first (most flexible)
+                # Use infer_datetime_format for better format inference
+                try:
+                    # Try with format='mixed' (pandas 2.0+)
+                    df[date_field] = pd.to_datetime(df[date_field], errors='coerce', format='mixed')
+                except TypeError:
+                    # Fallback for older pandas versions
+                    df[date_field] = pd.to_datetime(df[date_field], errors='coerce', infer_datetime_format=True)
 
-            parsed_count = df['OrderDate'].notna().sum()
-            if original_count > parsed_count:
-                logs.append(f"Cleaned 'OrderDate': Standardized datetime format, {parsed_count}/{original_count} dates successfully parsed. {original_count - parsed_count} dates could not be parsed (kept as NaN).")
-            else:
-                logs.append(f"Cleaned 'OrderDate': Standardized datetime format, all dates successfully parsed.")
+                # If auto-parsing failed for some rows, try explicit formats
+                if df[date_field].isna().any():
+                    na_mask = df[date_field].isna()
+                    for date_format in date_formats:
+                        if not na_mask.any():
+                            break
+                        try:
+                            # Only try to parse rows that are still NaN
+                            parsed_dates = pd.to_datetime(
+                                df.loc[na_mask, date_field],
+                                errors='coerce',
+                                format=date_format
+                            )
+                            # Update only successfully parsed dates
+                            df.loc[na_mask, date_field] = parsed_dates
+                            na_mask = df[date_field].isna()
+                        except (ValueError, TypeError):
+                            continue
+
+                # Only drop rows where date is completely invalid (not just unparseable)
+                # This is more lenient - we keep rows even if date parsing fails
+                # Uncomment the following line if you want strict date validation:
+                # df.dropna(subset=['OrderDate'], inplace=True)
+
+                parsed_count = df[date_field].notna().sum()
+                if original_count > parsed_count:
+                    logs.append(f"Cleaned '{date_field}': Standardized datetime format, {parsed_count}/{original_count} dates successfully parsed. {original_count - parsed_count} dates could not be parsed (kept as NaN).")
+                else:
+                    logs.append(f"Cleaned '{date_field}': Standardized datetime format, all dates successfully parsed.")
 
         # 6. Clean Customer Information Fields
         text_fields = {
