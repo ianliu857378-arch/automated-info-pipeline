@@ -17,6 +17,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from src.data_cleaner import DataCleaner
 from src.image_processor import ImageProcessor
+from src.field_config import STANDARD_FIELDS, get_field_options_by_category
 
 # ========== Configuration & Setup ==========
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -220,6 +221,55 @@ def get_api_key_safely():
         return None
 
 
+def detect_standard_field(column_name):
+    """
+    Automatically detect which standard field a column name matches.
+    Uses keyword matching with case-insensitive comparison.
+    
+    Args:
+        column_name: The original column name from Excel
+    
+    Returns:
+        The standard field key (e.g., "SaleID") or "Ignore" if no match
+    """
+    if not column_name:
+        return "Ignore"
+    
+    # Normalize column name for matching
+    col_lower = str(column_name).lower().strip()
+    
+    # Try to match against keywords for each standard field
+    best_match = "Ignore"
+    max_match_score = 0
+    
+    for field_key, field_info in STANDARD_FIELDS.items():
+        keywords = field_info.get("keywords", [])
+        
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            
+            # Exact match gets highest priority
+            if col_lower == keyword_lower:
+                return field_key
+            
+            # Partial match (keyword contained in column name)
+            if keyword_lower in col_lower:
+                # Score based on keyword length (longer = more specific)
+                score = len(keyword_lower)
+                if score > max_match_score:
+                    max_match_score = score
+                    best_match = field_key
+            
+            # Column name contained in keyword (less common but possible)
+            elif col_lower in keyword_lower and len(col_lower) > 2:
+                score = len(col_lower)
+                if score > max_match_score:
+                    max_match_score = score
+                    best_match = field_key
+    
+    return best_match
+
+
 # ========== Main Application ==========
 def main():
     # Sidebar Configuration
@@ -297,11 +347,90 @@ def main():
                 df_raw = pd.read_excel(temp_path, nrows=5)
                 st.dataframe(df_raw, use_container_width=True)
 
+                # ========== Column Mapping UI ==========
+                st.markdown("---")
+                st.markdown("### 🛠️ 配置字段映射 (Configure Field Mapping)")
+                st.info(
+                    "📌 **请告诉程序，你的表格中哪一列对应标准字段** | "
+                    "Please tell the system which columns in your file correspond to standard fields. "
+                    "Smart pre-selection has been applied based on column names, but you can adjust them below."
+                )
+                
+                # Get all columns from the full dataset
+                df_all_cols = pd.read_excel(temp_path, nrows=0)
+                raw_columns = df_all_cols.columns.tolist()
+                
+                # Get field options for dropdowns
+                field_options_display = get_field_options_by_category()
+                field_keys = [opt[0] for opt in field_options_display]
+                field_labels = [opt[1] for opt in field_options_display]
+                
+                # Create mapping configuration with smart pre-selection
+                col_map_config = {}
+                
+                # Use expander for cleaner UI when there are many columns
+                with st.expander("🔽 展开/收起映射配置 (Expand/Collapse Mapping)", expanded=True):
+                    # Display columns in a 3-column grid
+                    num_cols = len(raw_columns)
+                    cols_per_row = 3
+                    
+                    for i in range(0, num_cols, cols_per_row):
+                        cols = st.columns(cols_per_row)
+                        
+                        for j in range(cols_per_row):
+                            idx = i + j
+                            if idx >= num_cols:
+                                break
+                            
+                            raw_col = raw_columns[idx]
+                            
+                            with cols[j]:
+                                # Smart detection for this column
+                                detected_field = detect_standard_field(raw_col)
+                                
+                                # Find the index of the detected field in options
+                                try:
+                                    default_index = field_keys.index(detected_field)
+                                except ValueError:
+                                    default_index = 0  # Default to "Ignore"
+                                
+                                # Create selectbox with smart pre-selection
+                                selected = st.selectbox(
+                                    f"📄 原始列 | Column: **{raw_col}**",
+                                    options=field_keys,
+                                    format_func=lambda x: dict(field_options_display).get(x, x),
+                                    index=default_index,
+                                    key=f"map_{idx}_{raw_col}"
+                                )
+                                
+                                # Store mapping if not "Ignore"
+                                if selected != "Ignore":
+                                    col_map_config[raw_col] = selected
+                
+                # Display mapping summary
+                if col_map_config:
+                    st.markdown("---")
+                    st.markdown("#### ✅ 映射摘要 (Mapping Summary)")
+                    summary_cols = st.columns(min(4, len(col_map_config)))
+                    for idx, (orig_col, std_field) in enumerate(col_map_config.items()):
+                        with summary_cols[idx % len(summary_cols)]:
+                            st.markdown(f"""
+                                \u003cdiv style="background: #eff6ff; padding: 0.5rem; border-radius: 8px; border-left: 3px solid #3b82f6; margin-bottom: 0.5rem;"\u003e
+                                    \u003csmall style="color: #64748b;"\u003e{orig_col}\u003c/small\u003e\u003cbr\u003e
+                                    \u003cstrong style="color: #1e40af;"\u003e→ {std_field}\u003c/strong\u003e
+                                \u003c/div\u003e
+                            """, unsafe_allow_html=True)
+                    st.markdown(f"**总计映射字段 | Total Mapped Fields: {len(col_map_config)}**")
+                else:
+                    st.warning("⚠️ 没有映射任何字段！数据将以最小处理方式清洗。| No fields mapped! Data will be processed minimally.")
+
+                st.markdown("---")
+
                 if st.button("🚀 Start Cleaning Pipeline", key="clean_btn"):
                     with st.spinner("Analyzing and cleaning data... this may take a moment"):
                         try:
                             cleaner = DataCleaner(api_key=api_key if api_key else None)
-                            df_cleaned, summary = cleaner.clean_excel(temp_path)
+                            df_cleaned, summary = cleaner.clean_excel(temp_path, user_mapping=col_map_config)
 
                             st.success("✅ Cleaning Complete!")
 
